@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set tl_label = {"green": "ירוק", "yellow": "צהוב", "red": "אדום"} %}
+{% block content %}
+<a href="{{ url_for('kid_view', kid_id=kid.id) }}" class="back">‹ חזרה</a>
+
+<div class="meal-detail traffic-{{ meal.traffic_light or 'unknown' }}">
+  <img src="{{ url_for('serve_photo', rel_path=meal.photo_path) }}" alt="">
+
+  {% if meal.ai_error %}
+    <p class="error">לא הצלחנו לנתח את התמונה כרגע. התמונה נשמרה.</p>
+    <details><summary>פרטים טכניים</summary><code>{{ meal.ai_error }}</code></details>
+  {% elif meal.is_food == 0 %}
+    <p class="warn">לא זוהה אוכל בתמונה.</p>
+    {% if meal.notes %}<p class="notes">{{ meal.notes }}</p>{% endif %}
+  {% else %}
+    <h1>{{ meal.dish_name_he }}</h1>
+    {% if meal.dish_name_en %}<p class="english">{{ meal.dish_name_en }}</p>{% endif %}
+
+    <div class="result-grid">
+      <div>
+        <div class="dot t-{{ meal.traffic_light }}"></div>
+        <small>{{ tl_label[meal.traffic_light] }}</small>
+      </div>
+      <div class="stars-block">
+        {% for i in range(1, 6) %}{% if i <= meal.energy_stars %}⭐{% else %}☆{% endif %}{% endfor %}
+        <small>אנרגיה</small>
+      </div>
+      <div>
+        <strong>~{{ meal.estimated_grams }}g</strong>
+        <small>גודל מנה</small>
+      </div>
+    </div>
+
+    {% if ingredients %}
+    <h3>מרכיבים</h3>
+    <ul class="ingredients">{% for ing in ingredients %}<li>{{ ing }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if meal.notes %}<p class="notes">{{ meal.notes }}</p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

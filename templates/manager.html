@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}תצוגת מנהלת{% endblock %}
+{% block content %}
+<h1>תצוגת מנהלת</h1>
+
+<section>
+  <h2>הילדות</h2>
+  <ul class="kid-grid">
+    {% for kid in kids %}<li>{{ kid.display_name }}</li>{% endfor %}
+  </ul>
+</section>
+
+<section>
+  <h2>50 הארוחות האחרונות</h2>
+  {% if not meals %}
+  <p class="muted">אין עדיין ארוחות.</p>
+  {% else %}
+  <ul class="manager-meals">
+    {% for meal in meals %}
+    <li class="meal traffic-{{ meal.traffic_light or 'unknown' }}">
+      <img src="{{ url_for('serve_photo', rel_path=meal.photo_path) }}" alt="">
+      <div>
+        <strong>{{ meal.kid_name }}</strong>
+        <small>{{ meal.eaten_at }}</small>
+        <p>
+          {{ meal.dish_name_he or '—' }}
+          {% if meal.energy_stars %}· {{ meal.energy_stars }}⭐{% endif %}
+          {% if meal.estimated_grams %}· ~{{ meal.estimated_grams }}g{% endif %}
+        </p>
+        {% if meal.mood_before %}<small>הרגישה לפני: {{ meal.mood_before }}</small>{% endif %}
+        {% if meal.notes %}<small class="notes">{{ meal.notes }}</small>{% endif %}
+        {% if meal.ai_error %}<small class="error">AI לא זמין</small>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

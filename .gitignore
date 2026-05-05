@@ -8,3 +8,7 @@ venv/
 # Local env
 .env
 .env.local
+
+# App data (local only)
+storage/
+*.db

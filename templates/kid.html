@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ kid.display_name }}{% endblock %}
+{% block content %}
+<h1>שלום {{ kid.display_name }}! 👋</h1>
+
+<section class="power-card {% if completed %}done{% endif %}">
+  <div class="power-emoji">{{ power.emoji }}</div>
+  <h2>{{ power.name_he }}</h2>
+  <p>{{ power.task_he }}</p>
+  {% if completed %}
+    <p class="badge">✓ כל הכבוד! סיימת היום</p>
+  {% else %}
+    <form method="post" action="{{ url_for('mark_challenge', kid_id=kid.id) }}">
+      <button type="submit" class="primary">סיימתי 💪</button>
+    </form>
+  {% endif %}
+</section>
+
+<section class="capture-card">
+  <h2>מה אכלת?</h2>
+  <form method="post" action="{{ url_for('kid_upload', kid_id=kid.id) }}" enctype="multipart/form-data">
+    <label>איך את מרגישה עכשיו?</label>
+    <div class="moods">
+      {% for emoji in ['😄','🙂','😐','😟','😢'] %}
+      <label><input type="radio" name="mood" value="{{ emoji }}"><span>{{ emoji }}</span></label>
+      {% endfor %}
+    </div>
+
+    <label>כמה את רעבה? <small>(1=ממש לא, 5=ממש כן)</small></label>
+    <input type="range" name="hunger" min="1" max="5" value="3">
+
+    <input type="file" name="photo" accept="image/*" capture="environment" required>
+    <button type="submit" class="primary big">📸 שולחת</button>
+  </form>
+</section>
+
+{% if meals %}
+<section>
+  <h2>הארוחות שלך</h2>
+  <ul class="meal-list">
+    {% for meal in meals %}
+    <li class="meal traffic-{{ meal.traffic_light or 'unknown' }}">
+      <a href="{{ url_for('kid_meal', kid_id=kid.id, meal_id=meal.id) }}">
+        <img src="{{ url_for('serve_photo', rel_path=meal.photo_path) }}" alt="">
+        <div>
+          <strong>{{ meal.dish_name_he or 'ממתינה לניתוח' }}</strong>
+          {% if meal.energy_stars %}
+          <div class="stars">{% for _ in range(meal.energy_stars) %}⭐{% endfor %}</div>
+          {% endif %}
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

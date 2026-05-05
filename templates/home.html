@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>אתגר 7 הכוחות 💪</h1>
+<h2>מי את היום?</h2>
+<ul class="kid-grid">
+  {% for kid in kids %}
+  <li><a href="{{ url_for('kid_view', kid_id=kid.id) }}">{{ kid.display_name }}</a></li>
+  {% endfor %}
+</ul>
+<p class="manager-link"><a href="{{ url_for('manager_view') }}">תצוגת מנהלת ↗</a></p>
+{% endblock %}

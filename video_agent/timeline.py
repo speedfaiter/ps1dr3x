@@ -19,11 +19,17 @@ OpKind = Literal[
     "animated_text",
     "lower_third",
     "zoom",
+    "zoom_punch",
     "subtitles",
+    "word_captions",
     "music",
     "filter",
     "color",
     "transition",
+    "flash",
+    "glitch",
+    "blurred_bg",
+    "sfx_text",
 ]
 
 

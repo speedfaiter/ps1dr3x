@@ -114,6 +114,36 @@ def compile_command(
             new = new_label("v")
             filter_parts.append(f"[{video_label}]{vf}[{new}]")
             video_label = new
+        elif op.kind == "zoom_punch":
+            vf = _zoom_punch_filter_for(op, timeline)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
+        elif op.kind == "word_captions":
+            for vf in _word_caption_filters(op):
+                new = new_label("v")
+                filter_parts.append(f"[{video_label}]{vf}[{new}]")
+                video_label = new
+        elif op.kind == "flash":
+            vf = _flash_filter_for(op)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
+        elif op.kind == "glitch":
+            vf = _glitch_filter_for(op)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
+        elif op.kind == "blurred_bg":
+            vf = _blurred_bg_filter_for(op, timeline)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
+        elif op.kind == "sfx_text":
+            vf = _sfx_text_filter_for(op)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
         elif op.kind == "subtitles":
             srt = op.args["srt_path"]
             escaped = _ffmpeg_escape(str(srt))
@@ -542,6 +572,145 @@ def _zoom_filter_for(op: Op, timeline: Timeline) -> str:
     return (
         f"scale=w='iw*{zoom_expr}':h='ih*{zoom_expr}':eval=frame,"
         f"crop={width}:{height}"
+    )
+
+
+def _word_caption_filters(op: Op) -> list[str]:
+    """Pop-in word captions. `words` is a list of {text, start, end}."""
+    words = op.args["words"]
+    style = op.args.get("style") or {}
+    base_size = int(style.get("size", 60))
+    color = style.get("color", "yellow")
+    stroke = style.get("stroke", "black")
+    stroke_w = int(style.get("stroke_width", 4))
+    position = style.get("position", "center")
+    pop_dur = float(style.get("pop_duration", 0.12))
+
+    rest_y = {"top": "h*0.15", "center": "h*0.55", "bottom": "h*0.82"}.get(position, "h*0.55")
+
+    font_path = config.hebrew_capable_font()
+    font_arg = ""
+    if font_path.exists():
+        font_arg = f":fontfile='{_ffmpeg_escape(str(font_path))}'"
+
+    out: list[str] = []
+    for w in words:
+        text = _ffmpeg_text_escape(w["text"])
+        s = float(w["start"])
+        e = float(w["end"])
+        # Pop-in: scale from 0.6 -> 1.0 during pop_dur, hold through end.
+        pop_p = f"min(1,max(0,(t-{s})/{pop_dur}))"
+        ease = f"({pop_p}*(2-{pop_p}))"
+        size_expr = f"'{base_size * 0.6}+{base_size * 0.4}*{ease}'"
+        out.append(
+            f"drawtext=text='{text}'{font_arg}:fontsize={size_expr}:fontcolor={color}:"
+            f"bordercolor={stroke}:borderw={stroke_w}:"
+            f"x=(w-text_w)/2:y={rest_y}:"
+            f"enable='between(t,{s},{e})'"
+        )
+    return out
+
+
+def _zoom_punch_filter_for(op: Op, timeline: Timeline) -> str:
+    """Brief zoom pulse at `at` — scales up fast, then eases back."""
+    at = float(op.args["at"])
+    duration = float(op.args.get("duration", 0.4))
+    peak_zoom = float(op.args.get("peak_zoom", 1.25))
+    half = duration / 2
+    # Triangle: 1 -> peak_zoom -> 1 over `duration`, centered on `at`.
+    zoom_expr = (
+        f"(if(lt(t\\,{at - half})\\,1\\,"
+        f"if(gt(t\\,{at + half})\\,1\\,"
+        f"if(lt(t\\,{at})\\,"
+        f"1+({peak_zoom}-1)*((t-{at - half})/{half})\\,"
+        f"{peak_zoom}+(1-{peak_zoom})*((t-{at})/{half})))))"
+    )
+    w, h = timeline.clip.width, timeline.clip.height
+    return (
+        f"scale=w='iw*{zoom_expr}':h='ih*{zoom_expr}':eval=frame,"
+        f"crop={w}:{h}"
+    )
+
+
+def _flash_filter_for(op: Op) -> str:
+    """White/black flash — brief fade through a color.
+
+    `fade` without `enable` holds the fade color after/before its window,
+    which would wash out the whole clip. We gate each half with `enable` so
+    outside the flash window the frame passes through untouched.
+    """
+    at = float(op.args["at"])
+    duration = float(op.args.get("duration", 0.25))
+    color = op.args.get("color") or "white"
+    half = duration / 2
+    out_start = at - half
+    in_start = at
+    return (
+        f"fade=t=out:st={out_start}:d={half}:color={color}:"
+        f"enable='between(t,{out_start},{in_start})',"
+        f"fade=t=in:st={in_start}:d={half}:color={color}:"
+        f"enable='between(t,{in_start},{in_start + half})'"
+    )
+
+
+def _glitch_filter_for(op: Op) -> str:
+    """Short glitch burst: chroma shift + hue flicker + noise during window."""
+    start = float(op.args["start"])
+    end = float(op.args["end"])
+    intensity = float(op.args.get("intensity", 0.6))
+    shift = int(10 * intensity)
+    pfx = f"gl{abs(id(op)) % 100000}"
+    return (
+        f"split=2[{pfx}_base][{pfx}_shift];"
+        f"[{pfx}_shift]rgbashift=rh={shift}:bh=-{shift}:"
+        f"enable='between(t,{start},{end})'[{pfx}_shifted];"
+        f"[{pfx}_base][{pfx}_shifted]blend=all_mode=screen:all_opacity={intensity}:"
+        f"enable='between(t,{start},{end})',"
+        f"noise=alls={int(30 * intensity)}:allf=t+u:enable='between(t,{start},{end})'"
+    )
+
+
+def _blurred_bg_filter_for(op: Op, timeline: Timeline) -> str:
+    """Vertical-video style: blurred, upscaled background with sharp foreground centered."""
+    target_w = int(op.args.get("width", 1080))
+    target_h = int(op.args.get("height", 1920))
+    blur = int(op.args.get("blur", 30))
+    pfx = f"bb{abs(id(op)) % 100000}"
+    return (
+        f"split=2[{pfx}_bg_src][{pfx}_fg_src];"
+        f"[{pfx}_bg_src]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+        f"crop={target_w}:{target_h},gblur=sigma={blur}[{pfx}_bg];"
+        f"[{pfx}_fg_src]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[{pfx}_fg];"
+        f"[{pfx}_bg][{pfx}_fg]overlay=(W-w)/2:(H-h)/2"
+    )
+
+
+def _sfx_text_filter_for(op: Op) -> str:
+    """Big impact SFX text ('BOOM!', 'WHOOSH!') with scale pulse and background."""
+    text = _ffmpeg_text_escape(op.args["text"])
+    at = float(op.args["at"])
+    duration = float(op.args.get("duration", 0.6))
+    end = at + duration
+    base_size = int(op.args.get("size", 120))
+    color = op.args.get("color") or "yellow"
+    accent = op.args.get("background") or "red"
+    # Scale pop + settle, slight tilt via drawtext not supported; use shadow for depth.
+    pop_dur = 0.15
+    pop_p = f"min(1,max(0,(t-{at})/{pop_dur}))"
+    ease = f"({pop_p}*(2-{pop_p}))"
+    size_expr = f"'{base_size * 0.4}+{base_size * 0.6}*{ease}'"
+
+    font_path = config.hebrew_capable_font()
+    font_arg = ""
+    if font_path.exists():
+        font_arg = f":fontfile='{_ffmpeg_escape(str(font_path))}'"
+
+    return (
+        f"drawtext=text='{text}'{font_arg}:fontsize={size_expr}:fontcolor={color}:"
+        f"bordercolor=black:borderw=6:"
+        f"box=1:boxcolor={accent}@0.85:boxborderw=20:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2-h*0.1:"
+        f"enable='between(t,{at},{end})'"
     )
 
 

@@ -146,6 +146,82 @@ def test_zoom_in_graph():
     assert "crop=" in graph
 
 
+def test_word_captions_in_graph():
+    tl = Timeline(clip=_clip())
+    tl.add(
+        Op(
+            kind="word_captions",
+            args={
+                "words": [
+                    {"text": "Hello", "start": 0.0, "end": 0.4},
+                    {"text": "world", "start": 0.5, "end": 1.0},
+                ],
+                "style": {},
+            },
+        )
+    )
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert graph.count("drawtext") == 2
+    assert "Hello" in graph and "world" in graph
+
+
+def test_flash_compiles():
+    tl = Timeline(clip=_clip())
+    tl.add(Op(kind="flash", args={"at": 2.0, "duration": 0.25, "color": "white"}))
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "fade=t=out" in graph
+    assert "fade=t=in" in graph
+
+
+def test_glitch_compiles():
+    tl = Timeline(clip=_clip())
+    tl.add(Op(kind="glitch", args={"start": 1.0, "end": 1.5, "intensity": 0.6}))
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "rgbashift" in graph
+    assert "noise=" in graph
+
+
+def test_zoom_punch_compiles():
+    tl = Timeline(clip=_clip())
+    tl.add(Op(kind="zoom_punch", args={"at": 3.0, "duration": 0.4, "peak_zoom": 1.3}))
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "scale=" in graph
+
+
+def test_sfx_text_compiles():
+    tl = Timeline(clip=_clip())
+    tl.add(
+        Op(
+            kind="sfx_text",
+            args={
+                "text": "BOOM!",
+                "at": 2.0,
+                "duration": 0.6,
+                "size": 120,
+                "color": "yellow",
+                "background": "red",
+            },
+        )
+    )
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "BOOM!" in graph
+    assert "box=1" in graph
+
+
+def test_blurred_bg_compiles():
+    tl = Timeline(clip=_clip())
+    tl.add(Op(kind="blurred_bg", args={"width": 1080, "height": 1920, "blur": 30}))
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "gblur" in graph
+    assert "overlay" in graph
+
+
 def test_music_adds_second_input(tmp_path):
     tl = Timeline(clip=_clip())
     music = tmp_path / "bgm.mp3"

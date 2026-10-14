@@ -56,3 +56,28 @@ def transcribe_to_srt(source: Path, language: str | None = None) -> Path:
             f.write(f"{_format_ts(seg.start)} --> {_format_ts(seg.end)}\n")
             f.write(f"{seg.text.strip()}\n\n")
     return srt_path
+
+
+def transcribe_to_words(source: Path, language: str | None = None) -> list[dict]:
+    """Transcribe with word-level timings for TikTok-style captions.
+
+    Returns a list of {"text": str, "start": float, "end": float}.
+    """
+    logging_utils.say("whisper_transcribing")
+    model = _get_model()
+    segments, _ = model.transcribe(
+        str(source),
+        language=language or None,
+        vad_filter=True,
+        word_timestamps=True,
+    )
+    words: list[dict] = []
+    for seg in segments:
+        if not seg.words:
+            continue
+        for w in seg.words:
+            text = (w.word or "").strip()
+            if not text:
+                continue
+            words.append({"text": text, "start": float(w.start), "end": float(w.end)})
+    return words

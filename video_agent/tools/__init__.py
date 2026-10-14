@@ -209,6 +209,116 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "add_word_captions",
+        "description": (
+            "TikTok/Reels-style auto-captions: Whisper transcribes word-by-word, "
+            "each word pops into frame at its spoken time, centered in big bold "
+            "text. Set `source` to 'auto' to run Whisper. Hebrew supported."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "'auto' only in v1."},
+                "language": {"type": ["string", "null"]},
+                "style": {
+                    "type": ["object", "null"],
+                    "description": "{size:int, color:str, position:'top'|'center'|'bottom'}",
+                },
+            },
+            "required": ["source", "language", "style"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_flash",
+        "description": "Quick flash transition (fades to a color then back). Use at a cut.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "at": {"type": "number"},
+                "duration": {"type": "number"},
+                "color": {"type": ["string", "null"], "description": "'white' (default) or 'black'."},
+            },
+            "required": ["at", "duration", "color"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_glitch",
+        "description": (
+            "Short glitch burst: chroma shift + noise during the window. Use "
+            "sparingly for emphasis (0.3-0.6 seconds)."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start": {"type": "number"},
+                "end": {"type": "number"},
+                "intensity": {"type": "number", "description": "0.0 - 1.0"},
+            },
+            "required": ["start", "end", "intensity"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_zoom_punch",
+        "description": "Brief, fast zoom pulse at a specific moment for emphasis.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "at": {"type": "number"},
+                "duration": {"type": "number"},
+                "peak_zoom": {"type": "number", "description": "e.g. 1.25 for 25% zoom-in"},
+            },
+            "required": ["at", "duration", "peak_zoom"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_blurred_background",
+        "description": (
+            "Reframe horizontal video for vertical (TikTok/Reels/Shorts) output: "
+            "blurred, upscaled copy fills the frame; original sits sharp and "
+            "centered. Call this once near the end of the plan."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+                "blur": {"type": "integer", "description": "Gaussian sigma, e.g. 30"},
+            },
+            "required": ["width", "height", "blur"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_sfx_text",
+        "description": (
+            "Impact SFX text (e.g., 'BOOM!', 'WHOOSH!') with a scale pop and a "
+            "colored background. Short duration (0.4-0.8s)."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "at": {"type": "number"},
+                "duration": {"type": "number"},
+                "size": {"type": "integer"},
+                "color": {"type": ["string", "null"]},
+                "background": {"type": ["string", "null"]},
+            },
+            "required": ["text", "at", "duration", "size", "color", "background"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "add_subtitles",
         "description": (
             "Burn subtitles into the video. `source` is `\"auto\"` to run "
@@ -446,6 +556,111 @@ def _add_zoom(ctx: ToolContext, args: dict) -> dict:
                 "direction": args.get("direction") or "in",
                 "factor_start": factor_start,
                 "factor_end": factor_end,
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_word_captions")
+def _add_word_captions(ctx: ToolContext, args: dict) -> dict:
+    from . import subtitles as sub_mod
+
+    source = args["source"]
+    if source != "auto":
+        raise ToolError("v1 only supports source='auto' for word captions")
+    words = sub_mod.transcribe_to_words(ctx.timeline.clip.source, language=args.get("language"))
+    if not words:
+        raise ToolError("Whisper returned no words - is there speech in the audio?")
+    ctx.timeline.add(
+        Op(
+            kind="word_captions",
+            args={"words": words, "style": args.get("style") or {}},
+        )
+    )
+    return {**ctx.timeline.summary(), "word_count": len(words)}
+
+
+@_register("add_flash")
+def _add_flash(ctx: ToolContext, args: dict) -> dict:
+    ctx.timeline.add(
+        Op(
+            kind="flash",
+            args={
+                "at": float(args["at"]),
+                "duration": float(args.get("duration") or 0.25),
+                "color": args.get("color") or "white",
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_glitch")
+def _add_glitch(ctx: ToolContext, args: dict) -> dict:
+    if args["end"] <= args["start"]:
+        raise ToolError("end must be > start")
+    intensity = float(args.get("intensity") or 0.6)
+    if not 0.0 <= intensity <= 1.0:
+        raise ToolError("intensity must be 0.0 - 1.0")
+    ctx.timeline.add(
+        Op(
+            kind="glitch",
+            args={
+                "start": float(args["start"]),
+                "end": float(args["end"]),
+                "intensity": intensity,
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_zoom_punch")
+def _add_zoom_punch(ctx: ToolContext, args: dict) -> dict:
+    peak = float(args.get("peak_zoom") or 1.25)
+    if peak <= 1.0:
+        raise ToolError("peak_zoom must be > 1.0")
+    ctx.timeline.add(
+        Op(
+            kind="zoom_punch",
+            args={
+                "at": float(args["at"]),
+                "duration": float(args.get("duration") or 0.4),
+                "peak_zoom": peak,
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_blurred_background")
+def _add_blurred_background(ctx: ToolContext, args: dict) -> dict:
+    ctx.timeline.add(
+        Op(
+            kind="blurred_bg",
+            args={
+                "width": int(args.get("width") or 1080),
+                "height": int(args.get("height") or 1920),
+                "blur": int(args.get("blur") or 30),
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_sfx_text")
+def _add_sfx_text(ctx: ToolContext, args: dict) -> dict:
+    ctx.timeline.add(
+        Op(
+            kind="sfx_text",
+            args={
+                "text": args["text"],
+                "at": float(args["at"]),
+                "duration": float(args.get("duration") or 0.6),
+                "size": int(args.get("size") or 120),
+                "color": args.get("color") or "yellow",
+                "background": args.get("background") or "red",
             },
         )
     )

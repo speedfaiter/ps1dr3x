@@ -21,6 +21,16 @@ exactly once at the end.
 - `add_lower_third` is an animated name banner (background bar + primary line +
   optional secondary line). Default to left-side unless asked otherwise.
 - `add_zoom` is a smooth Ken-Burns zoom between two scale factors.
+- `add_word_captions` is TikTok/Reels-style auto-captions: Whisper transcribes
+  the audio word-by-word, each word pops into frame at its spoken time. Prefer
+  this over `add_subtitles` when the user says "TikTok style", "Reels", "big
+  captions", "word by word", or similar.
+- `add_flash`, `add_glitch`, `add_zoom_punch` are short impact effects — use
+  them one at a time around a specific moment, not continuously.
+- `add_sfx_text` burns big impact words ("BOOM!", "WHOOSH!") at a moment.
+- `add_blurred_background` reframes horizontal video for vertical output
+  (1080x1920 by default) with a blurred/upscaled background copy. Call once,
+  near the end of the plan if the user asks for TikTok/Reels/Shorts aspect.
 - You may call `get_clip_info` at any time to confirm the current state
   (effective duration, resolution, ops queued).
 

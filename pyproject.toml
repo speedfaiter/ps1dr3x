@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-agent"
+version = "0.1.0"
+description = "AI-powered video editing agent driven by Claude"
+readme = "video_agent/README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "anthropic>=0.40,<2.0",
+    "typer>=0.12,<1.0",
+    "rich>=13.7",
+    "ffmpeg-python>=0.2.0",
+    "faster-whisper>=1.0,<2.0",
+    "pydantic>=2.6,<3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+video-agent = "video_agent.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["video_agent*"]
+
+[tool.setuptools.package-data]
+video_agent = ["prompts/*.md", "assets/fonts/*", "assets/fonts/README.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["video_agent/tests"]
+addopts = "-q"

@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Whisper models downloaded on first use
+video_agent/assets/models/
+
+# Test fixtures generated on demand
+video_agent/tests/fixtures/*.mp4
+video_agent/tests/fixtures/*.wav
+video_agent/tests/fixtures/*.srt
+
+# Scratch outputs
+*.mp4
+*.wav
+*.srt
+!video_agent/tests/fixtures/.gitkeep

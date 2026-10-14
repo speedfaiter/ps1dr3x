@@ -99,6 +99,21 @@ def compile_command(
             new = new_label("v")
             filter_parts.append(f"[{video_label}]{vf}[{new}]")
             video_label = new
+        elif op.kind == "animated_text":
+            vf = _animated_drawtext_for(op)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
+        elif op.kind == "lower_third":
+            for vf in _lower_third_filters(op):
+                new = new_label("v")
+                filter_parts.append(f"[{video_label}]{vf}[{new}]")
+                video_label = new
+        elif op.kind == "zoom":
+            vf = _zoom_filter_for(op, timeline)
+            new = new_label("v")
+            filter_parts.append(f"[{video_label}]{vf}[{new}]")
+            video_label = new
         elif op.kind == "subtitles":
             srt = op.args["srt_path"]
             escaped = _ffmpeg_escape(str(srt))
@@ -362,6 +377,171 @@ def _drawtext_for(op: Op) -> str:
     return (
         f"drawtext=text='{text}'{font_arg}:fontsize={font_size}:fontcolor={color}:"
         f"bordercolor={stroke}:borderw={stroke_w}:{pos}{bg}{enable}"
+    )
+
+
+def _animated_drawtext_for(op: Op) -> str:
+    """drawtext with time-based expressions for slide-in / slide-out."""
+    text = _ffmpeg_text_escape(op.args["text"])
+    start = float(op.args["start"])
+    end = float(op.args["end"])
+    enter_from = op.args.get("enter_from") or "left"
+    exit_to = op.args.get("exit_to") or enter_from
+    enter_dur = float(op.args.get("enter_duration") or 0.5)
+    exit_dur = float(op.args.get("exit_duration") or 0.5)
+    style = op.args.get("style") or {}
+    font_size = int(style.get("size", 56))
+    color = style.get("color", "white")
+    stroke = style.get("stroke", "black")
+    stroke_w = int(style.get("stroke_width", 3))
+    box = style.get("background")
+
+    # Final rest position (where the text lives between slide-in and slide-out).
+    position = op.args.get("position") or "center"
+    rest_x = {
+        "top": "(w-text_w)/2",
+        "center": "(w-text_w)/2",
+        "bottom": "(w-text_w)/2",
+        "top-left": "w*0.05",
+        "top-right": "w-text_w-w*0.05",
+        "bottom-left": "w*0.05",
+        "bottom-right": "w-text_w-w*0.05",
+    }[position]
+    rest_y = {
+        "top": "h*0.1",
+        "center": "(h-text_h)/2",
+        "bottom": "h*0.85-text_h",
+        "top-left": "h*0.1",
+        "top-right": "h*0.1",
+        "bottom-left": "h*0.85-text_h",
+        "bottom-right": "h*0.85-text_h",
+    }[position]
+
+    enter_end = start + enter_dur
+    exit_start = max(enter_end, end - exit_dur)
+    hold_t = f"(t-{start})"
+    exit_t = f"(t-{exit_start})"
+
+    # Normalized progress 0..1 during enter and exit windows.
+    enter_p = f"min(1,max(0,{hold_t}/{enter_dur}))"
+    exit_p = f"min(1,max(0,{exit_t}/{exit_dur}))"
+
+    # Off-screen positions by side.
+    off_x = {"left": "-text_w-20", "right": "w+20", "top": rest_x, "bottom": rest_x}
+    off_y = {"left": rest_y, "right": rest_y, "top": "-text_h-20", "bottom": "h+20"}
+
+    x_in = off_x[enter_from]
+    y_in = off_y[enter_from]
+    x_out = off_x[exit_to]
+    y_out = off_y[exit_to]
+
+    # Ease using a smoothstep-ish quadratic (p * (2 - p)) on the enter progress.
+    enter_ease = f"({enter_p}*(2-{enter_p}))"
+    exit_ease = f"({exit_p}*(2-{exit_p}))"
+
+    x_expr = (
+        f"'if(lt(t,{exit_start}),"
+        f"({x_in})+(({rest_x})-({x_in}))*{enter_ease},"
+        f"({rest_x})+(({x_out})-({rest_x}))*{exit_ease})'"
+    )
+    y_expr = (
+        f"'if(lt(t,{exit_start}),"
+        f"({y_in})+(({rest_y})-({y_in}))*{enter_ease},"
+        f"({rest_y})+(({y_out})-({rest_y}))*{exit_ease})'"
+    )
+
+    font_path = config.hebrew_capable_font()
+    font_arg = ""
+    if font_path.exists():
+        font_arg = f":fontfile='{_ffmpeg_escape(str(font_path))}'"
+    bg = f":box=1:boxcolor={box}@0.6:boxborderw=12" if box else ""
+
+    return (
+        f"drawtext=text='{text}'{font_arg}:fontsize={font_size}:fontcolor={color}:"
+        f"bordercolor={stroke}:borderw={stroke_w}:x={x_expr}:y={y_expr}{bg}"
+        f":enable='between(t,{start},{end})'"
+    )
+
+
+def _lower_third_filters(op: Op) -> list[str]:
+    """Produce two drawtext layers (primary + secondary) that slide in from a side."""
+    primary = _ffmpeg_text_escape(op.args["primary_text"])
+    secondary = _ffmpeg_text_escape(op.args.get("secondary_text", ""))
+    start = float(op.args["start"])
+    end = float(op.args["end"])
+    side = op.args.get("side") or "left"
+    accent = op.args.get("accent_color") or "white"
+    enter_dur = 0.6
+    exit_dur = 0.4
+    exit_start = end - exit_dur
+
+    anchor_x = "w*0.06" if side == "left" else "w*0.94"
+    rest_y_primary = "h*0.78"
+    rest_y_secondary = "h*0.86"
+
+    enter_p = f"min(1,max(0,(t-{start})/{enter_dur}))"
+    exit_p = f"min(1,max(0,(t-{exit_start})/{exit_dur}))"
+    enter_ease = f"({enter_p}*(2-{enter_p}))"
+    exit_ease = f"({exit_p}*(2-{exit_p}))"
+
+    off_x = "-text_w-20" if side == "left" else "w+20"
+    rest_x_primary = anchor_x if side == "left" else f"{anchor_x}-text_w"
+    rest_x_secondary = rest_x_primary
+
+    def _slide_x(rest: str) -> str:
+        return (
+            f"'if(lt(t,{exit_start}),"
+            f"({off_x})+(({rest})-({off_x}))*{enter_ease},"
+            f"({rest})+(({off_x})-({rest}))*{exit_ease})'"
+        )
+
+    font_path = config.hebrew_capable_font()
+    font_arg = ""
+    if font_path.exists():
+        font_arg = f":fontfile='{_ffmpeg_escape(str(font_path))}'"
+
+    out = [
+        f"drawtext=text='{primary}'{font_arg}:fontsize=44:fontcolor=white:"
+        f"bordercolor=black:borderw=3:box=1:boxcolor={accent}@0.7:boxborderw=16:"
+        f"x={_slide_x(rest_x_primary)}:y={rest_y_primary}:"
+        f"enable='between(t,{start},{end})'"
+    ]
+    if secondary:
+        out.append(
+            f"drawtext=text='{secondary}'{font_arg}:fontsize=28:fontcolor=white:"
+            f"bordercolor=black:borderw=2:box=1:boxcolor=black@0.5:boxborderw=10:"
+            f"x={_slide_x(rest_x_secondary)}:y={rest_y_secondary}:"
+            f"enable='between(t,{start},{end})'"
+        )
+    return out
+
+
+def _zoom_filter_for(op: Op, timeline: Timeline) -> str:
+    """Smooth Ken-Burns-style zoom.
+
+    Implemented as `scale,crop` with a time-based expression. More reliable
+    than `zoompan`, which doesn't accept `t` in its z expression.
+    """
+    start = float(op.args["start"])
+    end = float(op.args["end"])
+    factor_start = float(op.args.get("factor_start", 1.0))
+    factor_end = float(op.args.get("factor_end", 1.2))
+    direction = op.args.get("direction") or "in"
+    if direction == "out":
+        factor_start, factor_end = factor_end, factor_start
+
+    duration = max(0.01, end - start)
+    # zoom(t): clamped linear between factor_start and factor_end over [start, end]
+    zoom_expr = (
+        f"(if(lt(t\\,{start})\\,{factor_start}\\,"
+        f"if(gt(t\\,{end})\\,{factor_end}\\,"
+        f"{factor_start}+({factor_end}-{factor_start})*((t-{start})/{duration}))))"
+    )
+    width, height = timeline.clip.width, timeline.clip.height
+    # Scale up (eval=frame so size recomputes each frame), then crop centered.
+    return (
+        f"scale=w='iw*{zoom_expr}':h='ih*{zoom_expr}':eval=frame,"
+        f"crop={width}:{height}"
     )
 
 

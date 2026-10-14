@@ -81,6 +81,71 @@ def test_unknown_filter_raises():
         compile_command(tl, Path("out.mp4"))
 
 
+def test_animated_text_in_graph():
+    tl = Timeline(clip=_clip())
+    tl.add(
+        Op(
+            kind="animated_text",
+            args={
+                "text": "Hello",
+                "start": 0.0,
+                "end": 3.0,
+                "enter_from": "left",
+                "exit_to": "right",
+                "enter_duration": 0.5,
+                "exit_duration": 0.5,
+                "position": "center",
+                "style": {},
+            },
+        )
+    )
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "drawtext" in graph
+    assert "-text_w" in graph  # off-screen left anchor
+
+
+def test_lower_third_two_drawtexts():
+    tl = Timeline(clip=_clip())
+    tl.add(
+        Op(
+            kind="lower_third",
+            args={
+                "primary_text": "Jane Doe",
+                "secondary_text": "Engineer",
+                "start": 1.0,
+                "end": 5.0,
+                "side": "left",
+                "accent_color": "#1f6feb",
+            },
+        )
+    )
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    # Two drawtext filters produced (one per line).
+    assert graph.count("drawtext") == 2
+
+
+def test_zoom_in_graph():
+    tl = Timeline(clip=_clip())
+    tl.add(
+        Op(
+            kind="zoom",
+            args={
+                "start": 0.0,
+                "end": 3.0,
+                "direction": "in",
+                "factor_start": 1.0,
+                "factor_end": 1.3,
+            },
+        )
+    )
+    cmd = compile_command(tl, Path("out.mp4"))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "scale=" in graph
+    assert "crop=" in graph
+
+
 def test_music_adds_second_input(tmp_path):
     tl = Timeline(clip=_clip())
     music = tmp_path / "bgm.mp3"

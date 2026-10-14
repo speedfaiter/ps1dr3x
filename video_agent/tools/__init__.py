@@ -131,6 +131,84 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "add_animated_text",
+        "description": (
+            "Burn a title that slides into frame from a side and slides out, "
+            "with eased motion. Use for AE-style kinetic titles. Hebrew supported."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "start": {"type": "number"},
+                "end": {"type": "number"},
+                "enter_from": {"type": "string", "enum": ["left", "right", "top", "bottom"]},
+                "exit_to": {"type": "string", "enum": ["left", "right", "top", "bottom"]},
+                "enter_duration": {"type": "number", "description": "Seconds for the slide-in."},
+                "exit_duration": {"type": "number", "description": "Seconds for the slide-out."},
+                "position": {"type": "string", "enum": POSITIONS},
+                "style": {
+                    "type": ["object", "null"],
+                    "description": "{size:int, color:str, stroke:str, stroke_width:int, background:str}",
+                },
+            },
+            "required": [
+                "text", "start", "end", "enter_from", "exit_to",
+                "enter_duration", "exit_duration", "position", "style",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_lower_third",
+        "description": (
+            "Animated lower-third: a colored background bar with a primary name "
+            "line and an optional secondary line (role/subtitle). Slides in from "
+            "the chosen side and out when the window ends."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "primary_text": {"type": "string"},
+                "secondary_text": {"type": ["string", "null"]},
+                "start": {"type": "number"},
+                "end": {"type": "number"},
+                "side": {"type": "string", "enum": ["left", "right"]},
+                "accent_color": {
+                    "type": ["string", "null"],
+                    "description": "Hex or ffmpeg color name for the primary-text bar background.",
+                },
+            },
+            "required": [
+                "primary_text", "secondary_text", "start", "end", "side", "accent_color",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_zoom",
+        "description": (
+            "Smooth Ken-Burns-style zoom that interpolates between two scale "
+            "factors over a time range. direction='in' zooms toward the subject, "
+            "'out' pulls back."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start": {"type": "number"},
+                "end": {"type": "number"},
+                "direction": {"type": "string", "enum": ["in", "out"]},
+                "factor_start": {"type": "number", "description": "Scale at start (1.0 = original)."},
+                "factor_end": {"type": "number", "description": "Scale at end."},
+            },
+            "required": ["start", "end", "direction", "factor_start", "factor_end"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "add_subtitles",
         "description": (
             "Burn subtitles into the video. `source` is `\"auto\"` to run "
@@ -294,6 +372,80 @@ def _add_text(ctx: ToolContext, args: dict) -> dict:
                 "end": float(args["end"]),
                 "position": args["position"],
                 "style": style,
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_animated_text")
+def _add_animated_text(ctx: ToolContext, args: dict) -> dict:
+    if args["end"] <= args["start"]:
+        raise ToolError("end must be > start")
+    enter_dur = float(args.get("enter_duration") or 0.5)
+    exit_dur = float(args.get("exit_duration") or 0.5)
+    if enter_dur + exit_dur >= (args["end"] - args["start"]):
+        raise ToolError(
+            "enter_duration + exit_duration must be less than the on-screen window"
+        )
+    ctx.timeline.add(
+        Op(
+            kind="animated_text",
+            args={
+                "text": args["text"],
+                "start": float(args["start"]),
+                "end": float(args["end"]),
+                "enter_from": args["enter_from"],
+                "exit_to": args["exit_to"],
+                "enter_duration": enter_dur,
+                "exit_duration": exit_dur,
+                "position": args["position"],
+                "style": args.get("style") or {},
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_lower_third")
+def _add_lower_third(ctx: ToolContext, args: dict) -> dict:
+    if args["end"] <= args["start"]:
+        raise ToolError("end must be > start")
+    if (args["end"] - args["start"]) < 1.5:
+        raise ToolError("lower-third window must be at least 1.5 seconds")
+    ctx.timeline.add(
+        Op(
+            kind="lower_third",
+            args={
+                "primary_text": args["primary_text"],
+                "secondary_text": args.get("secondary_text") or "",
+                "start": float(args["start"]),
+                "end": float(args["end"]),
+                "side": args["side"],
+                "accent_color": args.get("accent_color") or "#1f6feb",
+            },
+        )
+    )
+    return ctx.timeline.summary()
+
+
+@_register("add_zoom")
+def _add_zoom(ctx: ToolContext, args: dict) -> dict:
+    if args["end"] <= args["start"]:
+        raise ToolError("end must be > start")
+    factor_start = float(args.get("factor_start") or 1.0)
+    factor_end = float(args.get("factor_end") or 1.2)
+    if factor_start <= 0 or factor_end <= 0:
+        raise ToolError("zoom factors must be > 0")
+    ctx.timeline.add(
+        Op(
+            kind="zoom",
+            args={
+                "start": float(args["start"]),
+                "end": float(args["end"]),
+                "direction": args.get("direction") or "in",
+                "factor_start": factor_start,
+                "factor_end": factor_end,
             },
         )
     )

@@ -15,6 +15,12 @@ exactly once at the end.
 - Text, subtitles, color, filters, and transitions compose on top of whatever
   trim/speed produced.
 - `add_music` adds a secondary audio track mixed under the original audio.
+- `add_animated_text` is for AE-style kinetic titles that slide in from a side,
+  hold, then slide out. Prefer this over the static `add_text_overlay` whenever
+  the user asks for motion, "animated", "sliding", "kinetic", "effects".
+- `add_lower_third` is an animated name banner (background bar + primary line +
+  optional secondary line). Default to left-side unless asked otherwise.
+- `add_zoom` is a smooth Ken-Burns zoom between two scale factors.
 - You may call `get_clip_info` at any time to confirm the current state
   (effective duration, resolution, ops queued).
 
